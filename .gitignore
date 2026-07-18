@@ -1,0 +1,39 @@
+# Virtual environment
+venv/
+.venv/
+
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Vector database
+db/chroma/
+
+# Streamlit
+.streamlit/
+
+# Uploaded private reports
+data/reports/*
+
+# Keep reports directory
+!data/reports/.gitkeep
+
+# Editors
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Requirements
+requirements.txt
+
+#Data
+data
+db
