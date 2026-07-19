@@ -1,30 +1,27 @@
 import json
 import re
+import os
+import shutil
 from pathlib import Path
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-import os
 
 from dotenv import load_dotenv
 load_dotenv()
 
 # Main folders
 DATA_FOLDER = Path(os.getenv("DATA_FOLDER"))
-
 FMP_FOLDER = Path(os.getenv("FMP_FOLDER"))
-
 REPORTS_FOLDER = Path(os.getenv("REPORTS_FOLDER"))
-
+UPLOAD_FOLDER = Path(
+    os.getenv("UPLOAD_FOLDER", "data/uploads")
+)
 CHROMA_FOLDER = Path(os.getenv("CHROMA_FOLDER"))
-
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
-
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE"))
-
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP"))
-
 SUPPORTED_EXTENSIONS = {
     ".json",
     ".pdf",
@@ -33,6 +30,148 @@ SUPPORTED_EXTENSIONS = {
     ".xls",
     ".txt"
 }
+
+# --------------------------------------------------
+# Save uploaded files
+# --------------------------------------------------
+
+def save_uploaded_file(file_path):
+    """
+    Validate and copy a user file into the uploads directory.
+    """
+
+    source_path = Path(file_path)
+
+    if not source_path.exists():
+        raise FileNotFoundError(
+            f"File does not exist: {source_path}"
+        )
+
+    if not source_path.is_file():
+        raise ValueError(
+            f"The supplied path is not a file: {source_path}"
+        )
+
+    supported_extensions = {
+        ".json",
+        ".csv",
+        ".pdf",
+        ".xlsx",
+        ".txt",
+        ".xls"
+    }
+
+    extension = source_path.suffix.lower()
+
+    if extension not in supported_extensions:
+        raise ValueError(
+            f"Unsupported file type: {extension}. "
+            "Supported types are JSON, CSV, PDF, Text, Excel and XLSX."
+        )
+
+    UPLOAD_FOLDER.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    destination_path = UPLOAD_FOLDER / source_path.name
+
+    shutil.copy2(
+        source_path,
+        destination_path
+    )
+
+    return destination_path
+
+def load_uploaded_json(file_path):
+    """
+    Load an uploaded JSON file and convert it into LangChain documents.
+    """
+
+    file_path = Path(file_path)
+
+    with open(file_path, "r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    company_name = file_path.stem
+
+    company_name = company_name.replace("_data", "")
+    company_name = company_name.replace("_", " ")
+    company_name = company_name.strip()
+
+    documents = []
+
+    if isinstance(data, list):
+
+        for index, item in enumerate(data, start=1):
+
+            text = f"Company : {company_name}\n"
+            text += json_to_text(item)
+
+            document = Document(
+                page_content=text,
+                metadata={
+                    "company": company_name,
+                    "source": str(file_path),
+                    "file_name": file_path.name,
+                    "document_type": "uploaded_json",
+                    "record_number": index
+                }
+            )
+
+            documents.append(document)
+
+    elif isinstance(data, dict):
+
+        text = f"Company : {company_name}\n"
+        text += json_to_text(data)
+
+        document = Document(
+            page_content=text,
+            metadata={
+                "company": company_name,
+                "source": str(file_path),
+                "file_name": file_path.name,
+                "document_type": "uploaded_json"
+            }
+        )
+
+        documents.append(document)
+
+    else:
+        raise ValueError(
+            "The JSON file must contain a dictionary or a list."
+        )
+
+    return documents
+
+def add_uploaded_file_to_database(file_path):
+    """
+    Process an uploaded JSON file and add it to the existing ChromaDB.
+    """
+
+    file_path = Path(file_path)
+
+    if file_path.suffix.lower() != ".json":
+        raise ValueError(
+            "Currently, database ingestion supports JSON files only."
+        )
+
+    documents = load_uploaded_json(file_path)
+
+    chunks = split_documents(documents)
+
+    embedding_model = create_embedding_model()
+
+    vectorstore = Chroma(
+        persist_directory=str(CHROMA_FOLDER),
+        embedding_function=embedding_model
+    )
+
+    vectorstore.add_documents(chunks)
+    print("Total documents in DB:", vectorstore._collection.count())
+
+    return len(documents), len(chunks)
 
 # --------------------------------------------------
 # find_data_files
@@ -65,8 +204,6 @@ def find_data_files(data_folder=DATA_FOLDER):
                 files.append(file_path)
 
     return sorted(files)
-
-
 
 # --------------------------------------------------
 # load_json_file
@@ -109,7 +246,6 @@ def load_json_file(file_path):
         print(f"Error while reading '{file_path}': {error}")
         return None
     
-
 # --------------------------------------------------
 # Convertr json into text.
 # --------------------------------------------------
@@ -131,8 +267,11 @@ def make_readable_key(key):
         " ",
         key
     )
-
     return key.title()
+
+# --------------------------------------------------
+# Convert JSON into a Text.
+# --------------------------------------------------
 
 def json_to_text(json_data):
     """
@@ -316,10 +455,3 @@ def build_vector_database():
     print(f"Total chunks stored: {len(chunks)}")
 
     return vectorstore
-
-# --------------------------------------------------
-# Test
-# --------------------------------------------------
-if __name__ == "__main__":
-
-    build_vector_database()
