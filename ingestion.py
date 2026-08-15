@@ -320,7 +320,10 @@ def json_to_text(json_data):
 
 def load_json_documents(data_folder=DATA_FOLDER):
     """
-    Load all JSON files and convert them into LangChain Documents.
+    Load JSON financial files.
+
+    Each financial record/year becomes a separate
+    LangChain Document.
     """
 
     documents = []
@@ -337,34 +340,94 @@ def load_json_documents(data_folder=DATA_FOLDER):
         if json_data is None:
             continue
 
-        company = file_path.parent.name
+        company = file_path.parent.name.upper()
 
-        document_type = file_path.stem.replace("_", " ").title()
+        document_type = file_path.stem
 
-        json_text = json_to_text(json_data)
+        # ---------------------------------------------
+        # Financial JSON containing multiple records
+        # ---------------------------------------------
 
-        if not json_text.strip():
-            continue
+        if isinstance(json_data, list):
 
-        text = (
-            f"Company : {company}\n"
-            f"Document Type : {document_type}\n"
-            f"{json_text}"
-        )
+            for record in json_data:
 
-        metadata = {
-            "company": company,
-            "document_type": file_path.stem,
-            "source": str(file_path),
-            "file_name": file_path.name
-        }
+                if not isinstance(record, dict):
+                    continue
 
-        document = Document(
-            page_content=text,
-            metadata=metadata
-        )
+                json_text = json_to_text(record)
 
-        documents.append(document)
+                if not json_text.strip():
+                    continue
+
+                text = (
+                    f"Company : {company}\n"
+                    f"Document Type : {document_type}\n"
+                    f"{json_text}"
+                )
+
+                metadata = {
+                    "company": company,
+                    "document_type": document_type,
+                    "source": str(file_path),
+                    "file_name": file_path.name,
+                    "fiscal_year": str(
+                        record.get("fiscalYear", "")
+                    ),
+                    "period": str(
+                        record.get("period", "")
+                    ),
+                    "date": str(
+                        record.get("date", "")
+                    )
+                }
+
+                document = Document(
+                    page_content=text,
+                    metadata=metadata
+                )
+
+                documents.append(document)
+
+        # ---------------------------------------------
+        # JSON containing one dictionary
+        # ---------------------------------------------
+
+        elif isinstance(json_data, dict):
+
+            json_text = json_to_text(json_data)
+
+            if not json_text.strip():
+                continue
+
+            text = (
+                f"Company : {company}\n"
+                f"Document Type : {document_type}\n"
+                f"{json_text}"
+            )
+
+            metadata = {
+                "company": company,
+                "document_type": document_type,
+                "source": str(file_path),
+                "file_name": file_path.name,
+                "fiscal_year": str(
+                    json_data.get("fiscalYear", "")
+                ),
+                "period": str(
+                    json_data.get("period", "")
+                ),
+                "date": str(
+                    json_data.get("date", "")
+                )
+            }
+
+            document = Document(
+                page_content=text,
+                metadata=metadata
+            )
+
+            documents.append(document)
 
     return documents
 
@@ -436,7 +499,7 @@ def build_vector_database():
     print(f"Documents loaded: {len(documents)}")
 
     print("\nSplitting documents...")
-    chunks = split_documents(documents)
+    chunks = documents
 
     print(f"Chunks created: {len(chunks)}")
 
@@ -455,3 +518,6 @@ def build_vector_database():
     print(f"Total chunks stored: {len(chunks)}")
 
     return vectorstore
+
+if __name__ == "__main__":
+    build_vector_database()

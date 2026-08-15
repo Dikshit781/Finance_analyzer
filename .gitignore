@@ -31,9 +31,6 @@ data/reports/*
 # Logs
 *.log
 
-# Requirements
-requirements.txt
-
 #Data
 data
 db
